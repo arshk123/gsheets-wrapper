@@ -9,6 +9,7 @@ from oauth2client.file import Storage
 
 from pprint import pprint
 from googleapiclient import discovery
+from math import pow
 
 try:
     import argparse
@@ -22,6 +23,7 @@ SCOPES = 'https://www.googleapis.com/auth/spreadsheets'
 CLIENT_SECRET_FILE = 'client_secret.json'
 APPLICATION_NAME = 'Google Sheets API Python Quickstart'
 
+# TODO use batch update for updating csv
 
 def get_credentials():
     """Gets valid user credentials from storage.
@@ -52,20 +54,66 @@ def get_credentials():
     return credentials
 
 
+def ind_to_let(index):
+    """ Convert numerical index to equivalent column letter """
+    letter = ''
+    while index > 0:
+        temp = (index - 1) % 26
+        letter = letter.join(chr(temp + 65))
+        index = (index - temp - 1) / 26
+    return letter
+
+
+
+def let_to_ind(letter):
+    """ Function to convert column letter to corresponding numerical index """
+    column = 0
+    length = len(letter);
+    for i in range(length):
+        column += (ord(letter[i]) - 64) * pow(26, length - i - 1)
+    return int(column)
+
+
 def get_sheet(spreadsheetId, discoveryUrl, http, service, range):
     """Gets sheet from Google Drive API
-
     Returns: Spreadsheet object
     """
     return service.spreadsheets().values().get(
         spreadsheetId=spreadsheetId, range=range).execute()
 
 
-def write_to_sheet(spreadsheetId, service, range):
-    values = [["IoTs"]]
-    body = {'values': values}
-    result = service.spreadsheets().values().update(spreadsheetId=spreadsheetId, range=range, valueInputOption="USER_ENTERED", body=body).execute()
-    # print("writing to sheet")
+def write_row(spreadsheetId, service, row, values):
+    """ Update single row """
+    v = [values]
+    body = {'values': v}
+    result = service.spreadsheets().values().update(spreadsheetId=spreadsheetId,
+                                                    range=row,
+                                                    valueInputOption="USER_ENTERED",
+                                                    body=body).execute()
+
+
+def fill_data(row, data_cols, fill_cols, labels, service, spreadsheetId, index):
+    """ Function to take user input as expected column label
+        Input: takes row, the row of the google sheet we are updating
+        data_cols, the columns that have filled data that may help identify
+        what to fill in...
+        fill_cols, the columns we need to fill
+        labels, header of csv for identifying what kind of information we have
+    """
+    for d in data_cols:
+        if d <= len(row):
+            print(labels[d], row[d])
+    answers = []
+    for a in fill_cols:
+        answer = input("Provide an estimated " + labels[a] + ": ")
+        answers.append(answer)
+
+    for idx, ans in enumerate(answers):
+        write_row(spreadsheetId,
+                   service,
+                   row=str(ind_to_let(fill_cols[idx]+1) + str(index)),
+                   values=[answers[idx]])
+
 
 def display_sheet(sheet):
     """ Function to print out rows of the sheet """
@@ -80,13 +128,9 @@ def display_sheet(sheet):
                 print(cell, end="")
             print("")
 
-def main():
-    """Shows basic usage of the Sheets API.
 
-    Creates a Sheets API service object and prints the names and majors of
-    students in a sample spreadsheet:
-    https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit
-    https://docs.google.com/spreadsheets/d/1NuLvG1X3gzGrVU8qAca94ZwrAWt5Gba9ScHLRX0JZfk/edit
+def main():
+    """Shows basic usage of the Sheets wrapper
     """
 
     # Attributes
@@ -100,20 +144,28 @@ def main():
                                http=http,
                                discoveryServiceUrl=discoveryUrl)
 
-    spreadsheetId = '19rkIrd_-VASvonp2MV6WZTio2HlAYTS3IEDA11tlZXM'
+    spreadsheetId = ''
 
-    range = "A:V"
+    # specify range of columns to get from API
+    range = 'A:Z'
+
     sheet = get_sheet(spreadsheetId=spreadsheetId,
                       http=http,
                       service=service,
                       discoveryUrl=discoveryUrl,
-                      range='A:V')
+                      range=range)
 
-    # display_sheet(sheet)
+    # TODO: make this reusable
+    data_cols = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'L', 'M']
+    answer_col = [int(let_to_ind('X') - 1)]
+    indices = []
+    for idx, letter in enumerate(data_cols):
+        data_cols[idx] = let_to_ind(letter) - 1
 
-    write_to_sheet(spreadsheetId,
-                   service,
-                   range="V2:V")
+    values = sheet.get('values', [])
+    labels = values[0]
+    for idx, row_data in enumerate(values[1:]):
+        fill_data(row_data, data_cols, answer_col, labels, service, spreadsheetId, index=idx+2)
 
 if __name__ == '__main__':
     main()
